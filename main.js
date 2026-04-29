@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { PointerLockControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/PointerLockControls.js';
-import { World } from './World.js';
+import { World } from './src/World.js';
 
 // --- Ініціалізація ---
 const scene = new THREE.Scene();
