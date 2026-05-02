@@ -2,167 +2,95 @@ import * as THREE from 'three';
 import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
 import { World } from './src/World.js';
 
-// --- Ініціалізація ---
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x87CEEB); // Небо
+scene.background = new THREE.Color(0x87CEEB);
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-
 const renderer = new THREE.WebGLRenderer({ canvas: document.querySelector('#game-canvas'), antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(window.devicePixelRatio);
 
-// --- Світ ---
 const world = new World(scene);
 world.generate();
 
-// Ставимо гравця трохи вище найвищої точки в центрі
+// Ставимо гравця
 camera.position.set(16, 10, 16);
 
-// --- Світло ---
-const light = new THREE.DirectionalLight(0xffffff, 1.2);
-light.position.set(10, 20, 15);
-scene.add(light);
-scene.add(new THREE.AmbientLight(0x606060));
+// Світло
+const sun = new THREE.DirectionalLight(0xffffff, 1.2);
+sun.position.set(10, 20, 10);
+scene.add(sun);
+scene.add(new THREE.AmbientLight(0x707070));
 
-// --- Керування та Гравітація ---
+// Керування
 const controls = new PointerLockControls(camera, document.body);
 document.addEventListener('click', () => controls.lock());
-scene.add(controls.getObject());
 
-let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
-let canJump = false;
+let moveF = false, moveB = false, moveL = false, moveR = false, canJump = false;
+const v = new THREE.Vector3(); // Швидкість
+const PLAYER_H = 1.8;
 
-// Фізичні змінні
-const playerVelocity = new THREE.Vector3();
-const playerDirection = new THREE.Vector3();
-const PLAYER_HEIGHT = 1.8; // Зріст очей гравця
-const PLAYER_RADIUS = 0.4; // Ширина гравця
+document.addEventListener('keydown', (e) => {
+    if (e.code === 'KeyW') moveF = true;
+    if (e.code === 'KeyS') moveB = true;
+    if (e.code === 'KeyA') moveL = true;
+    if (e.code === 'KeyD') moveR = true;
+    if (e.code === 'Space' && canJump) { v.y = 10; canJump = false; }
+});
+document.addEventListener('keyup', (e) => {
+    if (e.code === 'KeyW') moveF = false;
+    if (e.code === 'KeyS') moveB = false;
+    if (e.code === 'KeyA') moveL = false;
+    if (e.code === 'KeyD') moveR = false;
+});
 
-const onKeyDown = (e) => {
-    switch (e.code) {
-        case 'KeyW': moveForward = true; break;
-        case 'KeyS': moveBackward = true; break;
-        case 'KeyA': moveLeft = true; break;
-        case 'KeyD': moveRight = true; break;
-        case 'Space': 
-            if (canJump) {
-                playerVelocity.y = 12; // Сила стрибка
-                canJump = false;
-            }
-            break;
-    }
-};
-const onKeyUp = (e) => {
-    switch (e.code) {
-        case 'KeyW': moveForward = false; break;
-        case 'KeyS': moveBackward = false; break;
-        case 'KeyA': moveLeft = false; break;
-        case 'KeyD': moveRight = false; break;
-    }
-};
-document.addEventListener('keydown', onKeyDown);
-document.addEventListener('keyup', onKeyUp);
-
-// --- Будування та руйнування (Raycaster) ---
+// Будування/Руйнування
 const raycaster = new THREE.Raycaster();
-raycaster.far = 10; // Дальність взаємодії (10 блоків)
-const mouseCenter = new THREE.Vector2(0, 0);
-
-window.addEventListener('mousedown', (event) => {
+window.addEventListener('mousedown', (e) => {
     if (!controls.isLocked) return;
-
-    raycaster.setFromCamera(mouseCenter, camera);
-    const intersects = raycaster.intersectObjects(world.blocks);
-
-    if (intersects.length > 0) {
-        const intersect = intersects[0];
-        if (event.button === 0) { // ЛКМ - ламати
-            world.removeBlock(intersect.object);
-        } else if (event.button === 2) { // ПКМ - ставити
-            world.addBlockFromRaycast(intersect);
-        }
+    raycaster.setFromCamera(new THREE.Vector2(0,0), camera);
+    const hits = raycaster.intersectObjects(world.blocks);
+    if (hits.length > 0) {
+        if (e.button === 0) world.removeBlock(hits[0].object);
+        if (e.button === 2) world.addBlockFromRaycast(hits[0]);
     }
 });
-window.addEventListener('contextmenu', e => e.preventDefault());
+window.oncontextmenu = (e) => e.preventDefault();
 
-
-// --- ЦИКЛ АНІМАЦІЇ (з фізикою) ---
 let prevTime = performance.now();
-
 function animate() {
     requestAnimationFrame(animate);
-
     if (controls.isLocked) {
         const time = performance.now();
         const delta = (time - prevTime) / 1000;
 
-        // 1. Прискорюємо падіння (гравітація)
-        playerVelocity.y -= 30.0 * delta; // 30 - сила тяжіння
+        v.y -= 25 * delta; // Гравітація
+        v.x -= v.x * 10 * delta;
+        v.z -= v.z * 10 * delta;
 
-        // 2. Сповільнюємо рух (тертя)
-        playerVelocity.x -= playerVelocity.x * 10.0 * delta;
-        playerVelocity.z -= playerVelocity.z * 10.0 * delta;
+        const dir = new THREE.Vector3(Number(moveR)-Number(moveL), 0, Number(moveF)-Number(moveB)).normalize();
+        v.x += dir.x * 150 * delta;
+        v.z += dir.z * 150 * delta;
 
-        // 3. Визначаємо напрямок руху
-        playerDirection.z = Number(moveForward) - Number(moveBackward);
-        playerDirection.x = Number(moveRight) - Number(moveLeft);
-        playerDirection.normalize();
+        controls.moveRight(v.x * delta);
+        controls.moveForward(v.z * delta);
+        camera.position.y += v.y * delta;
 
-        // 4. Додаємо швидкість від клавіш
-        if (moveForward || moveBackward) playerVelocity.z -= playerDirection.z * 200.0 * delta;
-        if (moveLeft || moveRight) playerVelocity.x -= playerDirection.x * 200.0 * delta;
-
-        // --- 5. ФІЗИКА ТА КОЛІЗІЇ ---
-        const playerObj = controls.getObject();
-        const oldPosition = playerObj.position.clone();
-        
-        // Рух по горизонталі
-        controls.moveRight(-playerVelocity.x * delta);
-        controls.moveForward(-playerVelocity.z * delta);
-
-        // Рух по вертикалі
-        playerObj.position.y += (playerVelocity.y * delta);
-
-        // **Проста колізія з підлогою (AABB)**
-        // Ми перевіряємо блок безпосередньо під ногами гравця
-        const feetParams = {
-            x: Math.round(playerObj.position.x),
-            y: Math.round(playerObj.position.y - PLAYER_HEIGHT), // Ноги
-            z: Math.round(playerObj.position.z)
-        };
-
-        // Шукаємо, чи є блок під нами в масиві світ
-        const blockUnderFeet = world.blocks.find(b => 
-            b.position.x === feetParams.x &&
-            b.position.y === feetParams.y &&
-            b.position.z === feetParams.z
+        // Колізія з підлогою
+        const p = camera.position;
+        const ground = world.blocks.find(b => 
+            Math.abs(b.position.x - Math.round(p.x)) < 0.6 &&
+            Math.abs(b.position.z - Math.round(p.z)) < 0.6 &&
+            Math.abs(b.position.y - Math.round(p.y - PLAYER_H)) < 0.5
         );
 
-        if (blockUnderFeet) {
-            // Якщо є блок, зупиняємо падіння і ставимо гравця на блок
-            playerVelocity.y = 0;
-            playerObj.position.y = blockUnderFeet.position.y + PLAYER_HEIGHT + 0.5; // 0.5 - половина висоти блоку
+        if (ground && v.y < 0) {
+            v.y = 0;
+            camera.position.y = ground.position.y + PLAYER_H + 0.5;
             canJump = true;
-        } else {
-            // Перевірка на випадок падіння за межі світу
-            if (playerObj.position.y < -10) {
-                playerObj.position.set(16, 10, 16); // Респавн
-                playerVelocity.y = 0;
-            }
         }
-
+        if (p.y < -10) p.set(16, 10, 16); // Респавн
         prevTime = time;
     }
-
     renderer.render(scene, camera);
 }
-
-// Оновлення розміру вікна
-window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-});
-
 animate();
