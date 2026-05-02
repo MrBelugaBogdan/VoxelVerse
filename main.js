@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
-import { World } from './World.js';
+import { World } from './src/World.js';
 
 // --- Ініціалізація ---
 const scene = new THREE.Scene();
